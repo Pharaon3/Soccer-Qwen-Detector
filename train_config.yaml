@@ -1,0 +1,32 @@
+# Training on dataset/ clip folders (annotator format: {clip_id}/{clip_id}.json + video)
+
+dataset_root: "dataset"
+annotator_dir_name: "annotator"
+
+# Clip geometry (match your annotations; annotator assumes ~30s clips)
+duration_sec: 30.0
+video_fps: 25
+num_segments: 30
+
+# Frame sampling: one frame per segment at segment center time
+image_size: 224
+
+# Split & loader
+val_ratio: 0.15
+seed: 42
+batch_size: 4
+num_workers: 0
+
+# Optimization
+epochs: 25
+lr: 0.0001
+weight_decay: 0.0001
+pretrained_backbone: true
+
+# If true, clips without a video file are skipped (required for real training).
+# If false, uses black placeholder frames (debug only — not real learning).
+mock_video_if_missing: false
+
+# Optional cap for debugging (null or 0 = use all clips)
+max_clips: 0
+save_every_epochs: 5

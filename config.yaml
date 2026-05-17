@@ -1,0 +1,36 @@
+# Video / sampling (30s @ 25 FPS = 750 frames)
+video:
+  fps: 25
+  clip_seconds: 30
+  sample_fps: 2
+  max_frames: 80
+
+# OpenAI-compatible endpoint for Qwen2.5-VL-72B
+qwen:
+  base_url: "http://localhost:8000/v1"
+  api_key: "EMPTY"
+  model_name: "Qwen/Qwen2.5-VL-72B-Instruct"
+  temperature: 0.2
+  max_tokens: 4096
+  timeout_sec: 600
+
+# Postprocessing
+postprocess:
+  output_fps: 25
+  # Merge duplicate events of same class if within this gap (seconds) per class
+  min_gap_sec:
+    pass: 0.8
+    pass_received: 0.8
+    recovery: 1.0
+    tackle: 1.2
+    interception: 1.0
+    ball_out_of_play: 3.0
+    clearance: 1.0
+    take_on: 1.2
+    substitution: 5.0
+    block: 1.0
+    aerial_duel: 1.0
+    shot: 2.0
+    save: 2.0
+    foul: 2.0
+    goal: 5.0

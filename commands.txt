@@ -1,0 +1,95 @@
+# Soccer Qwen Detector — available commands
+# Run from: soccer_qwen_detector (this folder)
+
+# -----------------------------------------------------------------------------
+# Setup
+# -----------------------------------------------------------------------------
+
+python -m venv .venv
+
+# Windows PowerShell — activate venv
+.\.venv\Scripts\Activate.ps1
+
+# Windows CMD — activate venv
+# .venv\Scripts\activate.bat
+
+# Install dependencies
+pip install -r requirements.txt
+
+# -----------------------------------------------------------------------------
+# CLI — show all arguments and help
+# -----------------------------------------------------------------------------
+
+python run_inference.py --help
+
+# -----------------------------------------------------------------------------
+# Inference — single video (requires --video and --output)
+# -----------------------------------------------------------------------------
+
+python run_inference.py --video path\to\video.mp4 --config config.yaml --output outputs\result.json
+
+# Default config path if omitted (uses .\config.yaml next to run_inference.py)
+python run_inference.py --video path\to\video.mp4 --output outputs\result.json
+
+# -----------------------------------------------------------------------------
+# Inference — folder of videos (requires --video_dir and --output_dir)
+# -----------------------------------------------------------------------------
+
+python run_inference.py --video_dir data\videos --config config.yaml --output_dir outputs\
+
+# Default config if omitted
+python run_inference.py --video_dir data\videos --output_dir outputs\
+
+# -----------------------------------------------------------------------------
+# CLI arguments reference (run_inference.py)
+# -----------------------------------------------------------------------------
+#
+# Source (mutually exclusive; exactly one required):
+#   --video PATH          Single video file (.mp4, .avi, .mkv, .mov, .webm)
+#   --video_dir PATH      Directory of video files to process
+#
+# Output (mutually exclusive; exactly one required):
+#   --output PATH         Output JSON for single-video mode
+#   --output_dir PATH     Output directory for batch mode
+#
+# Optional:
+#   --config PATH         YAML config (default: config.yaml in project root)
+#
+# -----------------------------------------------------------------------------
+# Outputs
+# -----------------------------------------------------------------------------
+#
+# Single-video with --output outputs\clip.json:
+#   outputs\clip.json       — postprocessed predictions
+#   outputs\clip_raw.txt    — raw model response
+#
+# Batch with --output_dir outputs\:
+#   outputs\{video_stem}.json
+#   outputs\{video_stem}_raw.txt
+#
+# On JSON parse failure:
+#   outputs\{stem}_error.txt — error + raw output (and process exits with error)
+#
+# -----------------------------------------------------------------------------
+# Optional checks
+# -----------------------------------------------------------------------------
+
+python -m py_compile run_inference.py
+
+# -----------------------------------------------------------------------------
+# Training (dataset/<clip_id>/ JSON + video; see README)
+# -----------------------------------------------------------------------------
+
+python run_train.py --help
+
+# Optional overrides
+#   --mock_video     treat missing videos as black frames (debug only)
+#   --epochs N       override train_config.yaml epochs
+
+python run_train.py --config train_config.yaml
+
+# Quick smoke test (1 epoch; black frames if a folder has no video — not for real accuracy)
+python run_train.py --mock_video --epochs 1
+
+# Optional: cap clips in config with max_clips: 16
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu

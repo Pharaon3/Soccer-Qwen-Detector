@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+dist/
+build/
+dataset/
+*.egg
+
+# Testing / type checkers
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Project artifacts
+checkpoints/
+outputs/*
+!outputs/.gitkeep
+
+# Training / inference data (clips, videos, labels)
+dataset/
+
+# Logs & experiment tracking
+*.log
+wandb/
+mlruns/
+runs/
+
+# Large media (if stored outside dataset/)
+*.mp4
+*.webm
+*.mkv
+*.mov
+*.avi
+*.m4v
