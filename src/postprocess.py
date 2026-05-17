@@ -117,3 +117,36 @@ def postprocess_model_events(
     step3 = merge_near_duplicate_events(step2, min_gap_sec)
     step4 = sort_by_timestamp(step3)
     return add_frame_indices(step4, output_fps)
+
+
+def postprocess_local_events(
+    raw_events: list[dict[str, Any]],
+    duration_sec: float,
+    output_fps: float,
+    min_gap_sec: dict[str, float],
+) -> list[dict[str, Any]]:
+    """
+    Postprocess local CNN detections (class, timestamp_sec, confidence, segment_index).
+    """
+    cleaned: list[dict[str, Any]] = []
+    for raw in raw_events:
+        d = normalize_class_key(copy.deepcopy(raw))
+        cls = _as_str(d.get("class"), "")
+        if cls not in ALLOWED_SET:
+            continue
+        ts = _clamp(_as_float(d.get("timestamp_sec"), 0.0), 0.0, duration_sec)
+        conf = _clamp(_as_float(d.get("confidence"), 0.0), 0.0, 1.0)
+        row: dict[str, Any] = {
+            "class": cls,
+            "timestamp_sec": ts,
+            "confidence": conf,
+        }
+        if "segment_index" in d:
+            try:
+                row["segment_index"] = int(d["segment_index"])
+            except (TypeError, ValueError):
+                pass
+        cleaned.append(row)
+
+    merged = merge_near_duplicate_events(sort_by_timestamp(cleaned), min_gap_sec)
+    return add_frame_indices(sort_by_timestamp(merged), output_fps)

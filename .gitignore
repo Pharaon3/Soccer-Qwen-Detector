@@ -44,6 +44,10 @@ desktop.ini
 checkpoints/
 outputs/*
 !outputs/.gitkeep
+outputs_qwen/
+outputs_model/
+outputs_eval/
+thresholds.yaml
 
 # Training / inference data (clips, videos, labels)
 dataset/

@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-CLI for soccer clip event detection with Qwen2.5-VL (OpenAI-compatible API).
+CLI for soccer clip event detection with Qwen2.5-VL.
+
+Backends:
+  hf  — local Hugging Face model (fine-tuned LoRA adapter recommended)
+  api — OpenAI-compatible remote server (vLLM, etc.)
 
 Examples:
-  python run_inference.py --video path/to/video.mp4 --config config.yaml --output outputs/result.json
-  python run_inference.py --video_dir data/videos --config config.yaml --output_dir outputs/
+  python run_inference.py --backend hf --adapter checkpoints/qwen_lora --video clip.mp4 --output out.json
+  python run_inference.py --backend api --video clip.mp4 --config config.yaml --output out.json
 """
 
 from __future__ import annotations
@@ -22,9 +26,15 @@ if str(ROOT) not in sys.path:
 
 from src.postprocess import postprocess_model_events
 from src.prompt_builder import build_system_prompt, build_user_prompt
+from src.qwen_hf_client import QwenHFClient, QwenHFConfig
 from src.qwen_vl_client import QwenVLClient, QwenVLConfig
 from src.utils import parse_model_json
 from src.video_loader import load_sampled_frames
+
+
+class _InferClient:
+    def infer_events(self, frames, system_prompt: str, user_text: str) -> str:
+        raise NotImplementedError
 
 
 def _load_config(path: Path) -> dict:
@@ -40,7 +50,8 @@ def _process_one_video(
     video_path: Path,
     output_json: Path,
     cfg: dict,
-    client: QwenVLClient,
+    client: _InferClient,
+    source_tag: str,
 ) -> None:
     video_cfg = cfg.get("video", {})
     qwen_cfg = cfg.get("qwen", {})
@@ -111,6 +122,7 @@ def _process_one_video(
         "video_id": video_id,
         "fps": int(output_fps) if output_fps == int(output_fps) else output_fps,
         "duration_sec": clip_seconds,
+        "source": source_tag,
         "events": events_out,
     }
 
@@ -126,6 +138,24 @@ def main() -> None:
     src.add_argument("--video", type=Path, help="Path to a single video file")
     src.add_argument("--video_dir", type=Path, help="Directory of videos to process")
     parser.add_argument("--config", type=Path, default=ROOT / "config.yaml", help="YAML config")
+    parser.add_argument(
+        "--backend",
+        choices=("hf", "api"),
+        default=None,
+        help="Inference backend: hf=local fine-tuned Qwen, api=OpenAI-compatible server",
+    )
+    parser.add_argument(
+        "--adapter",
+        type=Path,
+        default=None,
+        help="LoRA adapter directory (hf backend; default from config qwen.adapter_path)",
+    )
+    parser.add_argument(
+        "--train_config",
+        type=Path,
+        default=ROOT / "train_config.yaml",
+        help="Training config for hf defaults (model_id, adapter path)",
+    )
     out = parser.add_mutually_exclusive_group(required=True)
     out.add_argument("--output", type=Path, help="Output JSON path for single-video mode")
     out.add_argument("--output_dir", type=Path, help="Output directory for batch mode")
@@ -135,18 +165,45 @@ def main() -> None:
     if not cfg_path.is_file():
         raise SystemExit(f"Config not found: {cfg_path}")
     cfg = _load_config(cfg_path)
-
     q = cfg.get("qwen", {})
-    client = QwenVLClient(
-        QwenVLConfig(
-            base_url=str(q.get("base_url", "http://localhost:8000/v1")),
-            api_key=str(q.get("api_key", "EMPTY")),
-            model_name=str(q.get("model_name", "Qwen/Qwen2.5-VL-72B-Instruct")),
-            temperature=float(q.get("temperature", 0.2)),
-            max_tokens=int(q.get("max_tokens", 4096)),
-            timeout_sec=float(q.get("timeout_sec", 600)),
+
+    train_cfg: dict = {}
+    train_cfg_path = args.train_config.resolve()
+    if train_cfg_path.is_file():
+        train_cfg = _load_config(train_cfg_path)
+
+    backend = args.backend or str(q.get("backend", "hf"))
+    source_tag = "qwen_finetuned" if backend == "hf" else "qwen_api"
+
+    if backend == "hf":
+        q_train = train_cfg.get("qwen", {}) or {}
+        adapter = args.adapter
+        if adapter is None:
+            apath = q.get("adapter_path") or train_cfg.get("checkpoint_dir", "checkpoints/qwen_lora")
+            adapter = ROOT / str(apath)
+        adapter_str = str(adapter.resolve()) if adapter else None
+        client: _InferClient = QwenHFClient(
+            QwenHFConfig(
+                model_id=str(q.get("model_id") or q_train.get("model_id", "Qwen/Qwen2.5-VL-7B-Instruct")),
+                adapter_path=adapter_str,
+                torch_dtype=str(q.get("torch_dtype", q_train.get("torch_dtype", "bfloat16"))),
+                max_new_tokens=int(q.get("max_tokens", 4096)),
+                temperature=float(q.get("temperature", 0.2)),
+            )
         )
-    )
+        print(f"Backend: Hugging Face  adapter={adapter_str}")
+    else:
+        client = QwenVLClient(
+            QwenVLConfig(
+                base_url=str(q.get("base_url", "http://localhost:8000/v1")),
+                api_key=str(q.get("api_key", "EMPTY")),
+                model_name=str(q.get("model_name", "Qwen/Qwen2.5-VL-72B-Instruct")),
+                temperature=float(q.get("temperature", 0.2)),
+                max_tokens=int(q.get("max_tokens", 4096)),
+                timeout_sec=float(q.get("timeout_sec", 600)),
+            )
+        )
+        print("Backend: OpenAI-compatible API")
 
     if args.video is not None:
         if args.output is None:
@@ -155,7 +212,7 @@ def main() -> None:
         if not video_path.is_file():
             raise SystemExit(f"Video not found: {video_path}")
         out_path = args.output.resolve()
-        _process_one_video(video_path, out_path, cfg, client)
+        _process_one_video(video_path, out_path, cfg, client, source_tag)
         print(f"Wrote {out_path}")
         print(f"Wrote {out_path.with_name(out_path.stem + '_raw.txt')}")
         return
@@ -179,7 +236,7 @@ def main() -> None:
     for vp in videos:
         target = out_dir / f"{vp.stem}.json"
         print(f"Processing {vp.name} -> {target.name}")
-        _process_one_video(vp, target, cfg, client)
+        _process_one_video(vp, target, cfg, client, source_tag)
     print(f"Done. Outputs in {out_dir}")
 
 

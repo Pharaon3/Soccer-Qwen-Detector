@@ -93,3 +93,34 @@ python run_train.py --mock_video --epochs 1
 
 # Optional: cap clips in config with max_clips: 16
 # pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# -----------------------------------------------------------------------------
+# Full pipeline (see README.md)
+# -----------------------------------------------------------------------------
+
+# A. Inference with fine-tuned Qwen (default)
+python run_inference.py --backend hf --adapter checkpoints\qwen_lora --video data\videos\clip.mp4 --output outputs\clip.json
+
+# A2. Remote API pseudo-labeling (no fine-tuning)
+python run_inference.py --backend api --video data\videos\clip.mp4 --output outputs_qwen\clip.json
+
+# B. Convert Qwen output to training annotation
+python convert_qwen_to_annotations.py --input outputs_qwen\clip.json --output dataset\clip\clip.json --min_confidence 0.5
+python convert_qwen_to_annotations.py --input_dir outputs_qwen\ --dataset_dir dataset\ --min_confidence 0.5
+
+# C. Fine-tune Qwen2.5-VL (main training)
+python run_train.py --config train_config.yaml
+python run_train.py --max_clips 4 --epochs 1
+
+# Legacy CNN training (optional)
+python run_train_cnn.py --config train_config_cnn.yaml
+
+# D. Local model inference
+python run_model_inference.py --video data\videos\clip.mp4 --checkpoint checkpoints\last.pt --config train_config.yaml --output outputs_model\clip.json
+python run_model_inference.py --video_dir data\videos --checkpoint checkpoints\last.pt --config train_config.yaml --output_dir outputs_model\
+
+# E. Evaluate
+python run_eval.py --pred_dir outputs_model --gt_dir dataset --tolerance_sec 1.0
+
+# F. Tune thresholds
+python tune_thresholds.py --checkpoint checkpoints\last.pt --config train_config.yaml --output thresholds.yaml

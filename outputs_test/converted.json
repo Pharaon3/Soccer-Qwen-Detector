@@ -1,0 +1,71 @@
+{
+  "events": [
+    {
+      "time_sec": 2.56,
+      "label": "interception",
+      "source": "qwen",
+      "confidence": 1.0
+    },
+    {
+      "time_sec": 2.6,
+      "label": "pass",
+      "source": "qwen",
+      "confidence": 1.0
+    },
+    {
+      "time_sec": 5.12,
+      "label": "interception",
+      "source": "qwen",
+      "confidence": 1.0
+    },
+    {
+      "time_sec": 5.16,
+      "label": "pass",
+      "source": "qwen",
+      "confidence": 1.0
+    },
+    {
+      "time_sec": 7.88,
+      "label": "pass_received",
+      "source": "qwen",
+      "confidence": 1.0
+    },
+    {
+      "time_sec": 19.28,
+      "label": "pass",
+      "source": "qwen",
+      "confidence": 1.0
+    },
+    {
+      "time_sec": 21.8,
+      "label": "pass_received",
+      "source": "qwen",
+      "confidence": 1.0
+    },
+    {
+      "time_sec": 24.32,
+      "label": "pass",
+      "source": "qwen",
+      "confidence": 1.0
+    },
+    {
+      "time_sec": 25.36,
+      "label": "pass_received",
+      "source": "qwen",
+      "confidence": 1.0
+    },
+    {
+      "time_sec": 26.72,
+      "label": "pass",
+      "source": "qwen",
+      "confidence": 1.0
+    },
+    {
+      "time_sec": 27.96,
+      "label": "pass_received",
+      "source": "qwen",
+      "confidence": 1.0
+    }
+  ],
+  "environment": "unknown"
+}

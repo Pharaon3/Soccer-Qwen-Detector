@@ -10,6 +10,20 @@ import numpy as np
 from PIL import Image
 
 
+def _resize_pil_max_side(image: Image.Image, max_side: int) -> Image.Image:
+    """Downscale so longest edge is at most ``max_side`` (no upscale)."""
+    if max_side <= 0:
+        return image
+    w, h = image.size
+    longest = max(w, h)
+    if longest <= max_side:
+        return image
+    scale = max_side / float(longest)
+    new_w = max(1, int(round(w * scale)))
+    new_h = max(1, int(round(h * scale)))
+    return image.resize((new_w, new_h), Image.Resampling.BILINEAR)
+
+
 @dataclass
 class SampledFrame:
     """One sampled frame with metadata and a PIL image."""
@@ -57,6 +71,7 @@ def iter_sampled_frames(
     clip_seconds: float,
     sample_fps: float,
     max_frames: int,
+    max_image_side: int = 0,
 ) -> Iterator[SampledFrame]:
     """
     Yield sampled frames with original frame index, timestamp_sec, and PIL image.
@@ -82,6 +97,7 @@ def iter_sampled_frames(
                 continue
             rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
             pil_image = Image.fromarray(np.asarray(rgb, dtype=np.uint8))
+            pil_image = _resize_pil_max_side(pil_image, max_image_side)
             timestamp_sec = float(frame_idx) / use_fps
             yield SampledFrame(frame_index=frame_idx, timestamp_sec=timestamp_sec, image=pil_image)
     finally:
@@ -94,5 +110,10 @@ def load_sampled_frames(
     clip_seconds: float,
     sample_fps: float,
     max_frames: int,
+    max_image_side: int = 0,
 ) -> list[SampledFrame]:
-    return list(iter_sampled_frames(video_path, fps, clip_seconds, sample_fps, max_frames))
+    return list(
+        iter_sampled_frames(
+            video_path, fps, clip_seconds, sample_fps, max_frames, max_image_side
+        )
+    )

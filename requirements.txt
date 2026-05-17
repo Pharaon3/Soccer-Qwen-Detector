@@ -5,3 +5,11 @@ PyYAML>=6.0.1
 numpy>=1.24.0
 torch>=2.0.0
 torchvision>=0.15.0
+
+# Qwen2.5-VL fine-tuning & local inference
+transformers>=4.49.0
+peft>=0.13.0
+accelerate>=0.34.0
+
+# Optional: 4-bit QLoRA (set qwen.load_in_4bit: true in train_config.yaml)
+# bitsandbytes>=0.43.0

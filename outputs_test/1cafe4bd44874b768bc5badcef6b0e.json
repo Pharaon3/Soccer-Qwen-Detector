@@ -1,0 +1,63 @@
+{
+  "video_id": "1cafe4bd44874b768bc5badcef6b0e",
+  "fps": 25,
+  "duration_sec": 30,
+  "source": "test",
+  "events": [
+    {
+      "class": "interception",
+      "timestamp_sec": 2.56,
+      "confidence": 1.0
+    },
+    {
+      "class": "pass",
+      "timestamp_sec": 2.6,
+      "confidence": 1.0
+    },
+    {
+      "class": "interception",
+      "timestamp_sec": 5.12,
+      "confidence": 1.0
+    },
+    {
+      "class": "pass",
+      "timestamp_sec": 5.16,
+      "confidence": 1.0
+    },
+    {
+      "class": "pass_received",
+      "timestamp_sec": 7.88,
+      "confidence": 1.0
+    },
+    {
+      "class": "pass",
+      "timestamp_sec": 19.28,
+      "confidence": 1.0
+    },
+    {
+      "class": "pass_received",
+      "timestamp_sec": 21.8,
+      "confidence": 1.0
+    },
+    {
+      "class": "pass",
+      "timestamp_sec": 24.32,
+      "confidence": 1.0
+    },
+    {
+      "class": "pass_received",
+      "timestamp_sec": 25.36,
+      "confidence": 1.0
+    },
+    {
+      "class": "pass",
+      "timestamp_sec": 26.72,
+      "confidence": 1.0
+    },
+    {
+      "class": "pass_received",
+      "timestamp_sec": 27.96,
+      "confidence": 1.0
+    }
+  ]
+}

@@ -99,6 +99,69 @@ def load_clip_events(json_path: Path) -> tuple[list[tuple[float, str]], dict[str
     return pairs, root
 
 
+def segment_center_times(num_segments: int, duration_sec: float) -> list[float]:
+    """Center timestamp (seconds) for each temporal segment."""
+    seg_len = duration_sec / float(num_segments)
+    return [(i + 0.5) * seg_len for i in range(num_segments)]
+
+
+def get_inference_transform(image_size: int) -> transforms.Compose:
+    """ImageNet normalization transform used at inference (no augmentation)."""
+    return transforms.Compose(
+        [
+            transforms.Resize((image_size, image_size)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
+
+
+def build_targets_from_annotation(
+    annotation_path: Path,
+    num_segments: int,
+    duration_sec: float,
+    class_to_idx: dict[str, int] | None = None,
+) -> np.ndarray:
+    """
+    Build (num_segments, NUM_EVENT_CLASSES) multi-label targets from an annotation JSON.
+
+    ``class_to_idx`` is accepted for API compatibility; mapping uses ``CLASS_TO_IDX``.
+    """
+    _ = class_to_idx  # reserved for callers that pass a custom mapping
+    events, _ = load_clip_events(annotation_path)
+    return events_to_segment_targets(events, num_segments, duration_sec)
+
+
+def load_clip_frames_for_model(
+    video_path: Path,
+    num_segments: int,
+    image_size: int,
+    duration_sec: float,
+    video_fps: float,
+) -> torch.Tensor:
+    """
+    Load one frame per segment at segment center time.
+
+    Returns tensor of shape (num_segments, 3, image_size, image_size).
+    """
+    if not video_path.is_file():
+        raise FileNotFoundError(f"Video not found: {video_path}")
+
+    transform = get_inference_transform(image_size)
+    times = segment_center_times(num_segments, duration_sec)
+    frames: list[torch.Tensor] = []
+
+    for t in times:
+        arr = read_frame_at_time(video_path, t, video_fps)
+        if arr is None:
+            raise RuntimeError(
+                f"Failed to read frame at t={t:.3f}s from video: {video_path}"
+            )
+        frames.append(transform(Image.fromarray(arr)))
+
+    return torch.stack(frames, dim=0)
+
+
 def events_to_segment_targets(
     events: list[tuple[float, str]],
     num_segments: int,
@@ -183,17 +246,14 @@ class SoccerClipSegmentDataset(Dataset):
     def __len__(self) -> int:
         return len(self.records)
 
-    def _segment_center_times(self) -> list[float]:
-        seg_len = self.duration_sec / float(self.num_segments)
-        return [(i + 0.5) * seg_len for i in range(self.num_segments)]
-
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, str]:
         rec = self.records[idx]
-        events, _ = load_clip_events(rec.json_path)
-        y = events_to_segment_targets(events, self.num_segments, self.duration_sec)
+        y = build_targets_from_annotation(
+            rec.json_path, self.num_segments, self.duration_sec
+        )
         target = torch.from_numpy(y)
 
-        times = self._segment_center_times()
+        times = segment_center_times(self.num_segments, self.duration_sec)
         frames: list[torch.Tensor] = []
 
         use_mock = rec.video_path is None or not rec.video_path.is_file()
@@ -208,8 +268,7 @@ class SoccerClipSegmentDataset(Dataset):
                 arr = read_frame_at_time(rec.video_path, t, self.video_fps)
                 if arr is None:
                     arr = np.zeros((360, 640, 3), dtype=np.uint8)
-            pil = Image.fromarray(arr)
-            frames.append(self.transform(pil))
+            frames.append(self.transform(Image.fromarray(arr)))
 
         x = torch.stack(frames, dim=0)
         return x, target, rec.clip_id

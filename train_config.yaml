@@ -1,32 +1,83 @@
-# Training on dataset/ clip folders (annotator format: {clip_id}/{clip_id}.json + video)
+# Fine-tune Qwen2.5-VL on dataset/<clip_id>/ JSON + video
 
 dataset_root: "dataset"
 annotator_dir_name: "annotator"
+checkpoint_dir: "checkpoints/qwen_lora"
 
-# Clip geometry (match your annotations; annotator assumes ~30s clips)
 duration_sec: 30.0
-video_fps: 25
-num_segments: 30
 
-# Frame sampling: one frame per segment at segment center time
-image_size: 224
+# Frame sampling (see README — sample_fps is temporal density, not export fps)
+video:
+  fps: 25                    # timeline for timestamp_sec / frame_index
+  clip_seconds: 30
+  sample_fps: 8                # 2 images per second → ~60 samples over 30s (capped by max_frames)
+  max_frames: 240               # VRAM cap (16 frames × 7B LoRA is heavy; raise if you have 24GB+)
+  max_image_side: 1280         # downscale 1920x1080 before processor (0 = full resolution)
 
-# Split & loader
 val_ratio: 0.15
 seed: 42
-batch_size: 4
-num_workers: 0
-
-# Optimization
-epochs: 25
-lr: 0.0001
-weight_decay: 0.0001
-pretrained_backbone: true
-
-# If true, clips without a video file are skipped (required for real training).
-# If false, uses black placeholder frames (debug only — not real learning).
-mock_video_if_missing: false
-
-# Optional cap for debugging (null or 0 = use all clips)
 max_clips: 0
-save_every_epochs: 5
+
+qwen:
+  model_id: "Qwen/Qwen2.5-VL-7B-Instruct"
+  use_lora: true
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+  torch_dtype: "bfloat16"
+  load_in_4bit: false
+  gradient_checkpointing: true
+
+# LoRA: 3 epochs = quick test; 10–20 typical; 100 was the old CNN default (not for VLM)
+training:
+  epochs: 10
+  batch_size: 1                # clips averaged per backward (sequential forwards, not parallel)
+  gradient_accumulation_steps: 4
+  lr: 0.00002
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  save_every_epochs: 1
+  keep_last_n_checkpoints: 2   # only epoch_XXX folders kept (+ checkpoints/qwen_lora final)
+  log_every_steps: 4
+
+inference:
+  thresholds:
+    pass: 0.4
+    pass_received: 0.4
+    recovery: 0.4
+    tackle: 0.35
+    interception: 0.35
+    ball_out_of_play: 0.35
+    clearance: 0.35
+    take_on: 0.35
+    substitution: 0.25
+    block: 0.35
+    aerial_duel: 0.35
+    shot: 0.3
+    save: 0.3
+    foul: 0.3
+    goal: 0.2
+  min_gap_sec:
+    pass: 0.8
+    pass_received: 0.8
+    recovery: 1.0
+    tackle: 1.2
+    interception: 1.0
+    ball_out_of_play: 3.0
+    clearance: 1.0
+    take_on: 1.2
+    substitution: 5.0
+    block: 1.0
+    aerial_duel: 1.0
+    shot: 2.0
+    save: 2.0
+    foul: 2.0
+    goal: 5.0
