@@ -94,8 +94,9 @@ python run_eval.py --pred_dir outputs --gt_dir dataset --tolerance_sec 1.0
 #   video.max_frames: 240       — hard cap (30s * 8fps = 240 = full clip at 8fps)
 #   video.max_image_side: 1280  — downscale 1920x1080 before model
 #
-# sample_fps: 25 + max_frames: 750 is NOT practical (one prompt); use 2–8 fps + 60–240 frames.
-# Two GPUs: device_map auto may help; still keep max_frames reasonable.
+# sample_fps: 25 + max_frames: 750 will OOM on 32GB. Safe start: sample_fps: 2, max_frames: 32.
+# CUDA OOM fixes: lower max_frames (--max_frames 24), max_image_side: 896, qwen.load_in_4bit: true
+# Optional: set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # -----------------------------------------------------------------------------
 # Legacy — ResNet/CNN (optional, not Qwen)

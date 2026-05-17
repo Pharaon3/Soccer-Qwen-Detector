@@ -41,6 +41,17 @@ def resolve_torch_dtype(name: str) -> torch.dtype:
     return torch.bfloat16
 
 
+def _processor_kwargs(qcfg: dict[str, Any]) -> dict[str, Any]:
+    """Optional vision token limits for the HF processor."""
+    vcfg = qcfg.get("processor", {}) or {}
+    out: dict[str, Any] = {"trust_remote_code": True}
+    if "min_pixels" in vcfg:
+        out["min_pixels"] = int(vcfg["min_pixels"])
+    if "max_pixels" in vcfg:
+        out["max_pixels"] = int(vcfg["max_pixels"])
+    return out
+
+
 def load_qwen_for_training(cfg: dict[str, Any], device: torch.device) -> tuple[Any, Any]:
     """Load base Qwen2.5-VL and optionally wrap with LoRA."""
     (
@@ -76,13 +87,29 @@ def load_qwen_for_training(cfg: dict[str, Any], device: torch.device) -> tuple[A
     else:
         load_kwargs["device_map"] = "auto" if device.type == "cuda" else None
 
+    if bool(qcfg.get("use_flash_attention", True)):
+        try:
+            import flash_attn  # noqa: F401
+
+            load_kwargs["attn_implementation"] = "flash_attention_2"
+        except ImportError:
+            pass
+
     print(f"Loading {model_id} ...")
-    processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained(model_id, **_processor_kwargs(qcfg))
     model = Qwen2_5_VLForConditionalGeneration.from_pretrained(model_id, **load_kwargs)
 
     if bool(qcfg.get("gradient_checkpointing", True)):
         model.gradient_checkpointing_enable()
         model.config.use_cache = False
+
+    if bool(qcfg.get("load_in_4bit", False)):
+        try:
+            from peft import prepare_model_for_kbit_training
+
+            model = prepare_model_for_kbit_training(model)
+        except ImportError:
+            pass
 
     if bool(qcfg.get("use_lora", True)):
         target_modules = qcfg.get(
@@ -128,15 +155,17 @@ def build_training_batch(
         padding=True,
         return_tensors="pt",
     )
-    prompt_inputs = processor(
-        text=[text_prompt],
-        images=sample.images,
-        padding=True,
-        return_tensors="pt",
-    )
+    with torch.inference_mode():
+        prompt_inputs = processor(
+            text=[text_prompt],
+            images=sample.images,
+            padding=True,
+            return_tensors="pt",
+        )
+        prompt_len = int(prompt_inputs["input_ids"].shape[1])
+        del prompt_inputs
 
     labels = model_inputs["input_ids"].clone()
-    prompt_len = prompt_inputs["input_ids"].shape[1]
     labels[:, :prompt_len] = -100
     pad_id = processor.tokenizer.pad_token_id
     if pad_id is not None:
@@ -144,6 +173,11 @@ def build_training_batch(
 
     model_inputs["labels"] = labels
     return model_inputs
+
+
+def _release_cuda_memory() -> None:
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 def _prune_epoch_checkpoints(ckpt_dir: Path, keep_last_n: int) -> None:
@@ -212,11 +246,18 @@ def train_qwen(
         micro_losses: list[torch.Tensor] = []
 
         for sample in loader:
-            batch = build_training_batch(processor, train_ds, sample)
-            batch = {k: v.to(model.device) if hasattr(v, "to") else v for k, v in batch.items()}
+            try:
+                batch = build_training_batch(processor, train_ds, sample)
+                batch = {
+                    k: v.to(model.device) if hasattr(v, "to") else v
+                    for k, v in batch.items()
+                }
 
-            outputs = model(**batch)
-            micro_losses.append(outputs.loss / micro_batch)
+                outputs = model(**batch)
+                micro_losses.append(outputs.loss / micro_batch)
+                del batch, outputs
+            finally:
+                _release_cuda_memory()
 
             if len(micro_losses) < micro_batch:
                 continue
@@ -226,6 +267,8 @@ def train_qwen(
             accum_loss += float(step_loss.detach())
             micro_losses = []
             micro_steps += 1
+            del step_loss
+            _release_cuda_memory()
 
             if micro_steps % grad_accum == 0:
                 torch.nn.utils.clip_grad_norm_(trainable, max_grad_norm)
@@ -236,20 +279,25 @@ def train_qwen(
                     print(f"  step {global_step}  loss={accum_loss / grad_accum:.4f}")
                 running_loss += accum_loss
                 accum_loss = 0.0
+                _release_cuda_memory()
 
         if micro_losses:
             step_loss = torch.stack(micro_losses).sum()
             (step_loss / grad_accum).backward()
             accum_loss += float(step_loss.detach())
             micro_steps += 1
+            del step_loss
+            _release_cuda_memory()
 
         if micro_steps % grad_accum != 0:
             torch.nn.utils.clip_grad_norm_(trainable, max_grad_norm)
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
             running_loss += accum_loss
+            _release_cuda_memory()
 
         train_loss = running_loss / max(len(loader), 1)
+        _release_cuda_memory()
         val_loss = _eval_loss(model, processor, val_ds) if val_ds else None
         msg = f"epoch {epoch + 1}/{epochs}  train_loss≈{train_loss:.4f}"
         if val_loss is not None:
@@ -278,11 +326,18 @@ def _eval_loss(
     n = 0
     for i in range(len(val_ds)):
         sample = val_ds[i]
-        batch = build_training_batch(processor, val_ds, sample)
-        batch = {k: v.to(model.device) if hasattr(v, "to") else v for k, v in batch.items()}
-        outputs = model(**batch)
-        total += float(outputs.loss.detach())
-        n += 1
+        try:
+            batch = build_training_batch(processor, val_ds, sample)
+            batch = {
+                k: v.to(model.device) if hasattr(v, "to") else v
+                for k, v in batch.items()
+            }
+            outputs = model(**batch)
+            total += float(outputs.loss.detach())
+            n += 1
+            del batch, outputs
+        finally:
+            _release_cuda_memory()
     model.train()
     return total / max(n, 1)
 

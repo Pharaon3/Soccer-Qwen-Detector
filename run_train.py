@@ -44,6 +44,18 @@ def main() -> None:
         default=None,
         help="Override max_clips for quick tests",
     )
+    ap.add_argument(
+        "--max_frames",
+        type=int,
+        default=None,
+        help="Override video.max_frames (lower if CUDA OOM)",
+    )
+    ap.add_argument(
+        "--sample_fps",
+        type=float,
+        default=None,
+        help="Override video.sample_fps",
+    )
     args = ap.parse_args()
     cfg = _load_cfg(args.config.resolve())
 
@@ -51,6 +63,10 @@ def main() -> None:
         cfg.setdefault("training", {})["epochs"] = int(args.epochs)
     if args.max_clips is not None:
         cfg["max_clips"] = int(args.max_clips)
+    if args.max_frames is not None:
+        cfg.setdefault("video", {})["max_frames"] = int(args.max_frames)
+    if args.sample_fps is not None:
+        cfg.setdefault("video", {})["sample_fps"] = float(args.sample_fps)
 
     dataset_root = (ROOT / str(cfg.get("dataset_root", "dataset"))).resolve()
     skip = frozenset({str(cfg.get("annotator_dir_name", "annotator"))})
@@ -89,7 +105,14 @@ def main() -> None:
     clip_seconds = float(vcfg.get("clip_seconds", 30))
     sample_fps = float(vcfg.get("sample_fps", 2))
     max_frames = int(vcfg.get("max_frames", 16))
-    max_image_side = int(vcfg.get("max_image_side", 1280))
+    max_image_side = int(vcfg.get("max_image_side", 896))
+
+    if max_frames > 48:
+        print(
+            f"WARNING: max_frames={max_frames} is high for Qwen2.5-VL 7B on a ~32GB GPU.\n"
+            "  If you hit CUDA OOM, try: --max_frames 24 or set video.max_frames: 32 in train_config.yaml.\n"
+            "  (240 frames in one prompt typically needs 80GB+ or chunked video mode.)"
+        )
 
     train_ds = QwenSoccerFineTuneDataset(
         train_records,

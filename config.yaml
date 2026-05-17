@@ -1,11 +1,11 @@
-# Video / sampling (30s @ 25 FPS = 750 frames)
+# Video / sampling — keep aligned with train_config.yaml for fine-tuned inference
 video:
   fps: 25
   clip_seconds: 30
-  sample_fps: 8
-  max_frames: 240
+  sample_fps: 2
+  max_frames: 32
+  max_image_side: 896
 
-# Inference backend: "hf" = local fine-tuned Qwen (default), "api" = remote OpenAI-compatible server
 qwen:
   backend: "hf"
   model_id: "Qwen/Qwen2.5-VL-7B-Instruct"
@@ -13,16 +13,15 @@ qwen:
   torch_dtype: "bfloat16"
   temperature: 0.2
   max_tokens: 4096
-  # API mode only:
+  processor:
+    max_pixels: 401408
   base_url: "http://localhost:8000/v1"
   api_key: "EMPTY"
   model_name: "Qwen/Qwen2.5-VL-72B-Instruct"
   timeout_sec: 600
 
-# Postprocessing
 postprocess:
   output_fps: 25
-  # Merge duplicate events of same class if within this gap (seconds) per class
   min_gap_sec:
     pass: 0.8
     pass_received: 0.8

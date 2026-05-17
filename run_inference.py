@@ -60,7 +60,8 @@ def _process_one_video(
     fps = float(video_cfg.get("fps", 25))
     clip_seconds = float(video_cfg.get("clip_seconds", 30))
     sample_fps = float(video_cfg.get("sample_fps", 2))
-    max_frames = int(video_cfg.get("max_frames", 80))
+    max_frames = int(video_cfg.get("max_frames", 32))
+    max_image_side = int(video_cfg.get("max_image_side", 896))
 
     frames = load_sampled_frames(
         str(video_path),
@@ -68,6 +69,7 @@ def _process_one_video(
         clip_seconds=clip_seconds,
         sample_fps=sample_fps,
         max_frames=max_frames,
+        max_image_side=max_image_side,
     )
     if not frames:
         raise RuntimeError(f"No frames sampled from video: {video_path}")
