@@ -1,5 +1,5 @@
-# Soccer Qwen Detector — available commands
-# Run from: soccer_qwen_detector (this folder)
+# Soccer Qwen Detector — commands
+# Run from project root: Soccer-Qwen-Detector
 
 # -----------------------------------------------------------------------------
 # Setup
@@ -7,120 +7,115 @@
 
 python -m venv .venv
 
-# Windows PowerShell — activate venv
+# Windows PowerShell
 .\.venv\Scripts\Activate.ps1
 
-# Windows CMD — activate venv
-# .venv\Scripts\activate.bat
-
-# Install dependencies
+# Install (GPU PyTorch: see https://pytorch.org/get-started/locally/)
 pip install -r requirements.txt
 
+# Optional: 4-bit QLoRA (train_config.yaml → qwen.load_in_4bit: true)
+# pip install bitsandbytes
+
 # -----------------------------------------------------------------------------
-# CLI — show all arguments and help
+# Help
 # -----------------------------------------------------------------------------
 
 python run_inference.py --help
-
-# -----------------------------------------------------------------------------
-# Inference — single video (requires --video and --output)
-# -----------------------------------------------------------------------------
-
-python run_inference.py --video path\to\video.mp4 --config config.yaml --output outputs\result.json
-
-# Default config path if omitted (uses .\config.yaml next to run_inference.py)
-python run_inference.py --video path\to\video.mp4 --output outputs\result.json
-
-# -----------------------------------------------------------------------------
-# Inference — folder of videos (requires --video_dir and --output_dir)
-# -----------------------------------------------------------------------------
-
-python run_inference.py --video_dir data\videos --config config.yaml --output_dir outputs\
-
-# Default config if omitted
-python run_inference.py --video_dir data\videos --output_dir outputs\
-
-# -----------------------------------------------------------------------------
-# CLI arguments reference (run_inference.py)
-# -----------------------------------------------------------------------------
-#
-# Source (mutually exclusive; exactly one required):
-#   --video PATH          Single video file (.mp4, .avi, .mkv, .mov, .webm)
-#   --video_dir PATH      Directory of video files to process
-#
-# Output (mutually exclusive; exactly one required):
-#   --output PATH         Output JSON for single-video mode
-#   --output_dir PATH     Output directory for batch mode
-#
-# Optional:
-#   --config PATH         YAML config (default: config.yaml in project root)
-#
-# -----------------------------------------------------------------------------
-# Outputs
-# -----------------------------------------------------------------------------
-#
-# Single-video with --output outputs\clip.json:
-#   outputs\clip.json       — postprocessed predictions
-#   outputs\clip_raw.txt    — raw model response
-#
-# Batch with --output_dir outputs\:
-#   outputs\{video_stem}.json
-#   outputs\{video_stem}_raw.txt
-#
-# On JSON parse failure:
-#   outputs\{stem}_error.txt — error + raw output (and process exits with error)
-#
-# -----------------------------------------------------------------------------
-# Optional checks
-# -----------------------------------------------------------------------------
-
-python -m py_compile run_inference.py
-
-# -----------------------------------------------------------------------------
-# Training (dataset/<clip_id>/ JSON + video; see README)
-# -----------------------------------------------------------------------------
-
 python run_train.py --help
+python convert_qwen_to_annotations.py --help
+python run_eval.py --help
 
-# Optional overrides
-#   --mock_video     treat missing videos as black frames (debug only)
-#   --epochs N       override train_config.yaml epochs
+# -----------------------------------------------------------------------------
+# A. Fine-tune Qwen2.5-VL (main training)
+# -----------------------------------------------------------------------------
+# Requires: dataset/<clip_id>/<clip_id>.json + video in each folder
+# Edit train_config.yaml: video.sample_fps, video.max_frames (keep in sync with config.yaml)
 
 python run_train.py --config train_config.yaml
 
-# Quick smoke test (1 epoch; black frames if a folder has no video — not for real accuracy)
-python run_train.py --mock_video --epochs 1
-
-# Optional: cap clips in config with max_clips: 16
-# pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-
-# -----------------------------------------------------------------------------
-# Full pipeline (see README.md)
-# -----------------------------------------------------------------------------
-
-# A. Inference with fine-tuned Qwen (default)
-python run_inference.py --backend hf --adapter checkpoints\qwen_lora --video data\videos\clip.mp4 --output outputs\clip.json
-
-# A2. Remote API pseudo-labeling (no fine-tuning)
-python run_inference.py --backend api --video data\videos\clip.mp4 --output outputs_qwen\clip.json
-
-# B. Convert Qwen output to training annotation
-python convert_qwen_to_annotations.py --input outputs_qwen\clip.json --output dataset\clip\clip.json --min_confidence 0.5
-python convert_qwen_to_annotations.py --input_dir outputs_qwen\ --dataset_dir dataset\ --min_confidence 0.5
-
-# C. Fine-tune Qwen2.5-VL (main training)
-python run_train.py --config train_config.yaml
+# Quick test on a few clips
 python run_train.py --max_clips 4 --epochs 1
 
-# Legacy CNN training (optional)
+# Override epochs
+python run_train.py --epochs 5
+
+# Checkpoints:
+#   checkpoints/qwen_lora/          — final adapter (use for inference)
+#   checkpoints/qwen_lora/epoch_* — last 2 kept (keep_last_n_checkpoints)
+
+# -----------------------------------------------------------------------------
+# B. Inference — fine-tuned Qwen (local Hugging Face, default)
+# -----------------------------------------------------------------------------
+
+python run_inference.py --backend hf --adapter checkpoints\qwen_lora --video data\videos\clip.mp4 --output outputs\clip.json
+
+python run_inference.py --backend hf --video_dir data\videos --output_dir outputs\
+
+# Uses config.yaml qwen.adapter_path if --adapter omitted
+python run_inference.py --backend hf --video data\videos\clip.mp4 --output outputs\clip.json
+
+# -----------------------------------------------------------------------------
+# C. Inference — remote API (vLLM / OpenAI-compatible, no local adapter)
+# -----------------------------------------------------------------------------
+
+python run_inference.py --backend api --video data\videos\clip.mp4 --config config.yaml --output outputs_qwen\clip.json
+
+python run_inference.py --backend api --video_dir data\videos --output_dir outputs_qwen\
+
+# -----------------------------------------------------------------------------
+# D. Convert API pseudo-labels → dataset annotations (optional)
+# -----------------------------------------------------------------------------
+
+python convert_qwen_to_annotations.py --input outputs_qwen\clip.json --output dataset\clip_id\clip_id.json --min_confidence 0.5
+
+python convert_qwen_to_annotations.py --input_dir outputs_qwen\ --dataset_dir dataset\ --min_confidence 0.5
+
+# -----------------------------------------------------------------------------
+# E. Evaluate predictions vs ground truth
+# -----------------------------------------------------------------------------
+
+python run_eval.py --pred_dir outputs --gt_dir dataset --tolerance_sec 1.0
+
+# Writes: outputs_eval\metrics.json  outputs_eval\errors.json
+
+# -----------------------------------------------------------------------------
+# Full pipeline (typical)
+# -----------------------------------------------------------------------------
+# 1. Annotate in dataset/annotator/  (or use API labels via D)
+# 2. Place videos next to JSON under dataset/<clip_id>/
+# 3. python run_train.py --config train_config.yaml
+# 4. python run_inference.py --backend hf --adapter checkpoints\qwen_lora --video ... --output ...
+
+# -----------------------------------------------------------------------------
+# Video sampling (train_config.yaml + config.yaml — keep both aligned)
+# -----------------------------------------------------------------------------
+#   video.fps: 25              — timeline for timestamps (match source video)
+#   video.sample_fps: 8        — frames sampled per second of clip (NOT native fps alone)
+#   video.max_frames: 240       — hard cap (30s * 8fps = 240 = full clip at 8fps)
+#   video.max_image_side: 1280  — downscale 1920x1080 before model
+#
+# sample_fps: 25 + max_frames: 750 is NOT practical (one prompt); use 2–8 fps + 60–240 frames.
+# Two GPUs: device_map auto may help; still keep max_frames reasonable.
+
+# -----------------------------------------------------------------------------
+# Legacy — ResNet/CNN (optional, not Qwen)
+# -----------------------------------------------------------------------------
+
 python run_train_cnn.py --config train_config_cnn.yaml
 
-# D. Local model inference
-python run_model_inference.py --video data\videos\clip.mp4 --checkpoint checkpoints\last.pt --config train_config.yaml --output outputs_model\clip.json
-python run_model_inference.py --video_dir data\videos --checkpoint checkpoints\last.pt --config train_config.yaml --output_dir outputs_model\
+python run_model_inference.py --video data\videos\clip.mp4 --checkpoint checkpoints\cnn\last.pt --config train_config_cnn.yaml --output outputs_model\clip.json
 
-# E. Evaluate
-python run_eval.py --pred_dir outputs_model --gt_dir dataset --tolerance_sec 1.0
+python tune_thresholds.py --checkpoint checkpoints\cnn\last.pt --config train_config_cnn.yaml --output thresholds.yaml
 
-# F. Tune thresholds
-python tune_thresholds.py --checkpoint checkpoints\last.pt --config train_config.yaml --output thresholds.yaml
+# -----------------------------------------------------------------------------
+# Outputs (inference)
+# -----------------------------------------------------------------------------
+#   outputs\clip.json       — postprocessed events (source: qwen_finetuned or qwen_api)
+#   outputs\clip_raw.txt    — raw model text
+#   outputs\clip_error.txt  — on JSON parse failure
+
+# -----------------------------------------------------------------------------
+# Sanity check
+# -----------------------------------------------------------------------------
+
+python -m py_compile run_train.py run_inference.py
